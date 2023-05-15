@@ -1,6 +1,7 @@
 using UnityEngine;
 using UTMLatLngConverter;
 using System;
+using System.Linq;
 using System.IO;
 using System.Collections.Generic;
 
@@ -20,17 +21,17 @@ public class Drone : MonoBehaviour
     public GameObject DemoDroneOBJ;
     public GameObject DemoGroundOBJ;
     public GameObject DemoHitOBJ;
-
-    ////////////////////////////
     public GameObject PixelOBJ;
-    ////////////////////////////
 
     [Header("Camera Property")]
     public float focalLength = 15f;
     public float pixelPitch = 3.28f;
     public int centerX = 2640;
     public int centerY = 1978;
-    public float errorCorrection = 0;
+
+    [Header("Error Correction")]
+    public int startSample = 1;
+    [Range(1, 15)] public int sampleSize = 5;
 
     // Initialize variables    
     private double originEast = 0;
@@ -42,10 +43,12 @@ public class Drone : MonoBehaviour
     private List<Dictionary<string, object>> drone;
     private List<CalculationResult> calcResult = new List<CalculationResult>();
     RaycastHit hitRay;
+    Vector3 correctionRotation = new Vector3();
+    Quaternion correctionQuaternion = new Quaternion();
 
     void Awake()
     {
-        
+
     }
 
     void Start()
@@ -65,7 +68,7 @@ public class Drone : MonoBehaviour
         UTMtoUnity(ground); // convert UTM coord. of [ground] to Unity coord.
         GPStoUnity(drone); // convert GPS coord. of [drone] to Unity coord.
         SetDronePosition(drone, droneID);
-        SetTargetPosition(ground, 0, 5);
+        SetTargetPosition(ground, 0, 5); // Align a target 3D model using CP 1, 6
     }
 
     // Update is called once per frame
@@ -131,49 +134,148 @@ public class Drone : MonoBehaviour
             }
         }
 
-        // Calculate and save RESULT
-        if (Input.GetKeyDown(KeyCode.Z))
-        {
-            if ((int)currentMode == 0)
-            { RaycastUpdate(); }
-            if ((int)currentMode == 1)
-            { RaycastUpdatePixel(); }
-            ResultUpdate();
-        }
-
-        // Calculate and save RESULT (Pixel Version)
-        if (Input.GetKeyDown(KeyCode.X))
-        {
-            if ((int)currentMode == 0)
-            { RaycastUpdate(); }
-            if ((int)currentMode == 1)
-            { RaycastUpdatePixel(); }
-            ResultUpdate();
-        }
-
+        // (PRESS Enter) Calculate and save RESULT
+        // (PRESS LShift+Enter) Calculate and save "ALL" RESULTS
         if (Input.GetKeyDown(KeyCode.Return))
         {
-            // 자동으로 모든 데이터에 대한 계산 결과 저장
-            Debug.Log("Enter");
-
-            for (droneID = 1; droneID < drone.Count; droneID++)
+            if (Input.GetKey(KeyCode.LeftShift))
             {
-                SetDronePosition(drone, droneID);
+                for (droneID = 1; droneID < drone.Count; droneID++)
+                {
+                    groundID = (int)drone[droneID]["ground"] - 1;
+
+                    SetDronePosition(drone, droneID);
+                    SetGroundPosition(ground, groundID);
+
+                    switch (currentMode)
+                    {
+                        case Mode.Centerpoint:
+                            RaycastUpdate();
+                            break;
+                        case Mode.Calibration:
+                            RaycastUpdateCalib();
+                            break;
+                    }
+                    ResultUpdate();
+                    SaveResult();
+                }
+            }
+            else
+            {
+                switch (currentMode)
+                {
+                    case Mode.Centerpoint:
+                        RaycastUpdate();
+                        break;
+                    case Mode.Calibration:
+                        RaycastUpdateCalib();
+                        break;
+                }
+                ResultUpdate();
+                SaveResult();
+            }
+        }
+
+        // (PRESS E) Error correction
+        if (Input.GetKeyDown(KeyCode.E))
+        {
+            correctionRotation = new Vector3(0, 0, 0);
+            correctionQuaternion = new Quaternion(0, 0, 0, 0);
+
+            for (droneID = startSample; droneID <= sampleSize; droneID++)
+            {
                 groundID = (int)drone[droneID]["ground"] - 1;
+
+                SetDronePosition(drone, droneID);
                 SetGroundPosition(ground, groundID);
 
-                if ((int)currentMode == 0)
-                { RaycastUpdate(); }
-                if ((int)currentMode == 1)
-                { RaycastUpdatePixel(); }
+                switch (currentMode)
+                {
+                    case Mode.Centerpoint:
+                        RaycastUpdate();
+                        break;
+                    case Mode.Calibration:
+                        RaycastUpdateCalib();
+                        break;
+                }
                 ResultUpdate();
             }
 
-            Debug.Log("Calculation is done");
+            /*// #1 Vector correction method
+            List<Vector3> rotationDiffList = new List<Vector3>();
+
+            foreach (var result in calcResult)
+            {
+                Quaternion quaternionToground = Quaternion.LookRotation(result.GroundPosition - result.DronePosition);
+                Quaternion quaternionTohit = Quaternion.LookRotation(result.HitRay.point - result.DronePosition);
+
+                Vector3 rotationToground = quaternionToground.eulerAngles;
+                Vector3 rotationTohit = quaternionTohit.eulerAngles;
+                Vector3 rotationDiff = rotationToground - rotationTohit; // Difference between 'rotation to ground' and 'rotation to hit'
+
+                rotationDiffList.Add(rotationDiff);
+
+                // Debug (raycast visualization)
+                Vector3 forwardToground = quaternionToground * Vector3.forward * result.HitRay.distance;
+                Vector3 forwardTohit = quaternionTohit * Vector3.forward * result.HitRay.distance;
+                Debug.DrawRay(result.DronePosition, forwardToground, Color.cyan, 10);
+                Debug.DrawRay(result.DronePosition, forwardTohit, Color.red, 10);
+
+                Debug.Log("Drone ID : " + result.DroneID);
+                Debug.Log("Rotation to ground : " + rotationToground);
+                Debug.Log("Rotation to hit : " + rotationTohit);
+                Debug.Log("Rotation difference : " + rotationDiff);
+                Debug.Log("-----------------------------------------------");
+            }
+            
+            correctionRotation = new Vector3(
+                rotationDiffList.Average(x => x.x),
+                rotationDiffList.Average(x => x.y),
+                rotationDiffList.Average(x => x.z));*/
+
+            // #2 Quaternion correction method
+            List<Quaternion> quaternionDiffList = new List<Quaternion>();
+
+            foreach (var result in calcResult)
+            {
+                Quaternion quaternionToground = Quaternion.LookRotation(result.GroundPosition - result.DronePosition);
+                Quaternion quaternionTohit = Quaternion.LookRotation(result.HitRay.point - result.DronePosition);
+
+                Vector3 rotationToground = quaternionToground.eulerAngles;
+                Vector3 rotationTohit = quaternionTohit.eulerAngles;
+                Vector3 rotationDiff = rotationToground - rotationTohit; // Difference between 'rotation to ground' and 'rotation to hit'
+
+                Quaternion quaternionDiff = Quaternion.Euler(rotationDiff); // Convert rotation to quaternion
+                quaternionDiffList.Add(quaternionDiff);
+            }
+            
+            Quaternion[] quaternions = new Quaternion[quaternionDiffList.Count];
+            quaternions = quaternionDiffList.ToArray(); // Convert list to array
+
+            int count = quaternions.Length;
+            float weight = 1.0f / (float)count;
+            Quaternion quaternionAvg = Quaternion.identity; // Initialize quaternion
+
+            for (int i = 0; i < count; i++)
+            {
+                quaternionAvg *= Quaternion.Slerp(Quaternion.identity, quaternions[i], weight);
+            }
+
+            Debug.Log("Correction quaternion in Euler: " + quaternionAvg.eulerAngles);
+            correctionQuaternion = quaternionAvg;
         }
 
-        // Visualization
-        if (Input.GetKeyDown(KeyCode.Slash))
+        // (PRESS R) Initialize error correction vector
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            correctionRotation = new Vector3(0, 0, 0);
+            correctionQuaternion = new Quaternion(0, 0, 0, 0);
+
+            Debug.Log(correctionQuaternion.eulerAngles);
+        }
+
+        // (PRESS V) Visualize caculated results
+        if (Input.GetKeyDown(KeyCode.V))
         {
             this.transform.GetChild(0).gameObject.SetActive(false);
             GroundOBJ.gameObject.SetActive(false);
@@ -184,11 +286,11 @@ public class Drone : MonoBehaviour
                 Debug.Log("Drone ID : " + result.DroneID + " / Ground ID : " + (result.GroundID));
 
                 // Object rendering
-                GameObject DemoDroneClone = Instantiate(DemoDroneOBJ, result.Position, result.Angle);
+                GameObject DemoDroneClone = Instantiate(DemoDroneOBJ, result.DronePosition, result.Rotation);
                 DemoDroneClone.tag = "Clone";
-                GameObject DemoGroundClone = Instantiate(DemoGroundOBJ, result.Ground, result.Angle); // Angle은 gameobject가 구체이므로 상관 없음
+                GameObject DemoGroundClone = Instantiate(DemoGroundOBJ, result.GroundPosition, result.Rotation); // 여기서 Angle은 gameobject가 구체이므로 무효함
                 DemoGroundClone.tag = "Clone";
-                GameObject DemoHitClone = Instantiate(DemoHitOBJ, result.Hit.point, result.Angle); // Angle은 gameobject가 구체이므로 상관 없음
+                GameObject DemoHitClone = Instantiate(DemoHitOBJ, result.HitRay.point, result.Rotation); // 여기서 Angle은 gameobject가 구체이므로 무효함
                 DemoHitClone.tag = "Clone";
 
                 // Line rendering
@@ -197,8 +299,8 @@ public class Drone : MonoBehaviour
                 LR.endColor = Color.red;
                 LR.startWidth = 0.1f;
                 LR.endWidth = 0.1f;
-                LR.SetPosition(0, result.Position);
-                LR.SetPosition(1, result.Hit.point);
+                LR.SetPosition(0, result.DronePosition);
+                LR.SetPosition(1, result.HitRay.point);
             }
         }
 
@@ -223,11 +325,11 @@ public class Drone : MonoBehaviour
     {
         public int DroneID;
         public int GroundID;
-        public RaycastHit Hit;
-        public Vector3 Position;
-        public Quaternion Angle;
+        public RaycastHit HitRay;
+        public Vector3 DronePosition;
+        public Quaternion Rotation;
         public Vector3 Forward;
-        public Vector3 Ground;
+        public Vector3 GroundPosition;
     }
 
     void UTMtoUnity(List<Dictionary<string, object>> UTMcoord)
@@ -280,7 +382,7 @@ public class Drone : MonoBehaviour
             Convert.ToSingle(Drone[ID]["long"]));
         this.transform.eulerAngles = new Vector3(
             Convert.ToSingle(-Convert.ToSingle(Drone[ID]["pitch"])),
-            Convert.ToSingle(Drone[ID]["head"]) + Convert.ToSingle(Drone[ID]["yaw"]) + errorCorrection,
+            Convert.ToSingle(Drone[ID]["head"]) + Convert.ToSingle(Drone[ID]["yaw"]),
             Convert.ToSingle(Drone[ID]["roll"]));
     }
 
@@ -299,7 +401,7 @@ public class Drone : MonoBehaviour
             Vector3 forward = transform.TransformDirection(Vector3.forward) * hitRay.distance;
             HitOBJ.transform.position = hitRay.point;
             Debug.DrawRay(transform.position, forward, Color.red, 10);
-            Debug.Log("Point Update");
+            Debug.Log("Hitted Point Updated");
         }
         else
         {
@@ -307,31 +409,29 @@ public class Drone : MonoBehaviour
         }
     }
 
-    void RaycastUpdatePixel()
+    void RaycastUpdateCalib()
     {
-        // Initialize drone position
-        SetDronePosition(drone, droneID);
-
         int pixelX = (int)drone[droneID]["pixelx"];
         int pixelY = (int)drone[droneID]["pixely"];
 
-        // Move raycast origin to principal point
-        this.transform.position -= this.transform.forward * (focalLength / 1000);
-        float imageX = (pixelX - centerX) * pixelPitch / 1000000;
-        float imageY = (centerY - pixelY) * pixelPitch / 1000000;
-        float imageZ = (focalLength / 1000);
+        // Move origin of raycast to principal point
+        this.transform.position -= this.transform.forward * (focalLength / 1000); // Convert to meters
+        float imageX = (pixelX - centerX) * pixelPitch / 1000000; // Convert to meters
+        float imageY = (centerY - pixelY) * pixelPitch / 1000000; // Convert to meters
+        float imageZ = (focalLength / 1000); // Convert to meters
 
         Vector3 forwardToPixel = new Vector3(imageX, imageY, imageZ); // Direction to designated pixel coordinates
         Quaternion forwardRotation = Quaternion.LookRotation(forwardToPixel);
-        // Rotate raycast forward with designated pixel coordinate
-        this.transform.Rotate(forwardRotation.eulerAngles);
+        
+        this.transform.Rotate(forwardRotation.eulerAngles + correctionQuaternion.eulerAngles);
 
+        // Part from RaycastUpdate()
         if (Physics.Raycast(this.transform.position, this.transform.forward, out hitRay))
         {
             Vector3 forward = transform.TransformDirection(Vector3.forward) * hitRay.distance;
             PixelOBJ.transform.position = hitRay.point;
             Debug.DrawRay(transform.position, forward, Color.blue, 10);
-            Debug.Log("Point Update");
+            Debug.Log("Hitted Point Updated");
         }
         else
         {
@@ -340,6 +440,19 @@ public class Drone : MonoBehaviour
     }
 
     void ResultUpdate()
+    {
+        CalculationResult result = new CalculationResult();
+        result.DroneID = (int)drone[droneID]["number"];
+        result.GroundID = (int)ground[groundID]["number"];
+        result.HitRay = hitRay;
+        result.DronePosition = this.transform.position;
+        result.Rotation = this.transform.rotation;
+        result.Forward = this.transform.forward;
+        result.GroundPosition = GroundOBJ.transform.position;
+        calcResult.Add(result);
+    }
+
+    void SaveResult()
     {
         var hitUTM = new UTMCoords(hitRay.point.x + originEast, hitRay.point.z + originNorth, 'S', 52);
         var hitGPS = CoordsConverter.ToLatLng(hitUTM);
@@ -360,23 +473,5 @@ public class Drone : MonoBehaviour
         list.Add(droneUTM.Easting);
         list.Add(droneUTM.Northing);
         MakeCSV.Save(list);
-
-        CalculationResult result = new CalculationResult();
-        result.DroneID = (int)drone[droneID]["number"];
-        result.GroundID = (int)ground[groundID]["number"];
-        result.Hit = hitRay;
-        result.Position = this.transform.position;
-        result.Angle = this.transform.rotation;
-        result.Forward = this.transform.forward;
-        result.Ground = GroundOBJ.transform.position;
-        calcResult.Add(result);
-
-        //Debug.Log("Target Latitude : " + hitGPS.Latitude);
-        //Debug.Log("Target Longitude : " + hitGPS.Longitude);
-        //Debug.Log("Drone Latitude : " + droneGPS.Latitude);
-        //Debug.Log("Drone Longitude : " + droneGPS.Longitude);
-        //Debug.Log("Drone Height : " + (droneUnity.y + offsetHeight));
-        //Debug.Log("Drone UTM(E) : " + droneUTM.Easting);
-        //Debug.Log("Drone UTM(N) : " + droneUTM.Northing);
     }
 }

@@ -781,7 +781,8 @@ MonoBehaviour:
   pixelPitch: 3.28
   centerX: 2640
   centerY: 1978
-  errorCorrection: 0.4424
+  startSample: 1
+  sampleSize: 5
 --- !u!4 &1358053989
 Transform:
   m_ObjectHideFlags: 0
