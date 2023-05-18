@@ -768,11 +768,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   currentMode: 1
   groundlist: ground
-  dronelist: RTK_YAWonly_TN
+  dronelist: RTK_YAWonly
   TargetOBJ: {fileID: 236536749}
+  originTargetID: 1
   DroneOBJ: {fileID: 1358053984}
   GroundOBJ: {fileID: 643312718}
-  HitOBJ: {fileID: 223832061}
+  HitmarkerOBJ: {fileID: 223832061}
   DemoDroneOBJ: {fileID: 1995182131}
   DemoGroundOBJ: {fileID: 2072912296}
   DemoHitOBJ: {fileID: 1995334108}
@@ -781,7 +782,8 @@ MonoBehaviour:
   pixelPitch: 3.28
   centerX: 2640
   centerY: 1978
-  startSample: 1
+  currentECMode: 1
+  startSampleNumber: 1
   sampleSize: 5
 --- !u!4 &1358053989
 Transform:
