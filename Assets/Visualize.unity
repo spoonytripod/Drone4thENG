@@ -782,7 +782,7 @@ MonoBehaviour:
   pixelPitch: 3.28
   centerX: 2640
   centerY: 1978
-  currentECMode: 1
+  currentECMode: 0
   startSampleNumber: 1
   sampleSize: 5
 --- !u!4 &1358053989

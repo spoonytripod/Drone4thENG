@@ -67,7 +67,7 @@ public class Drone : MonoBehaviour
         ground = ReadCSV.Read(groundlist);
         drone = ReadCSV.Read(dronelist);
 
-        // Set Origin
+        // Set coordinates origin
         originEast = (double)ground[originTargetID - 1]["easting"];
         originNorth = (double)ground[originTargetID - 1]["northing"];
         originHeight = (double)ground[originTargetID - 1]["height"];
@@ -81,7 +81,7 @@ public class Drone : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        // Select DRONE POSITION
+        // (PRESS ¡ç¡æ) Select DRONE POSITION
         if (Input.GetKeyDown(KeyCode.RightArrow))
         {
             if (droneID == drone.Count)
@@ -111,7 +111,7 @@ public class Drone : MonoBehaviour
             }
         }
 
-        // Select TARGET(GROUND) POSITION
+        // (PRESS ¡è¡é) Select TARGET(GROUND) POSITION
         if (Input.GetKeyDown(KeyCode.UpArrow))
         {
             if (groundID == (ground.Count - 1))
@@ -256,6 +256,8 @@ public class Drone : MonoBehaviour
                     rotationError.z.ToString("F3"),
                     altError[result.index].ToString("F3"),
                     result.value.HitRay.distance.ToString("F3"));
+
+                calcResult = new List<CalculationResult>(); // Initialize calculation result
             }
 
             // Averaging rotation errors
@@ -329,7 +331,7 @@ public class Drone : MonoBehaviour
             }
         }
 
-        // Destroy all cloned game objects
+        // (PRESS Delete) Destroy all cloned game objects
         if (Input.GetKeyDown(KeyCode.Delete))
         {
             this.transform.GetChild(0).gameObject.SetActive(true);
